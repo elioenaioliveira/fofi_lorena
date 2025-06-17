@@ -1,16 +1,18 @@
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import datetime
-import pyttsx3 
 import google.generativeai as genai
+from dotenv import load_dotenv
+
+# Carrega as variáveis de ambiente do arquivo .env (ótimo para teste local)
+load_dotenv()
 
 # --- Configuração do App Flask ---
 app = Flask(__name__)
-# Habilita o CORS para permitir que o seu HTML (em outro "domínio") acesse esta API
 CORS(app) 
 
-# --- VARIÁVEL EXTERNA COM O PROMPT PRINCIPAL ---
-# Deixando a configuração da persona da IA em uma variável global, o código fica mais limpo.
+# --- PERSONA DA IA ---
 PROMPT_PERSONA = (
     "Você é uma vendedora IA chamada Fofi, a foca. Quem desenvolveu você foi Elioenai Programmer para a Fonoaudióloga Lorena Gomes, você é um robô inteligente que auxilia no atendimento e nos exercícios que a Fonoaudióloga passa para você. Você auxilia nos exercícios, ajudando a lembrar como faz os exercícios e informações importantes sobre o processo de fonoaudiologia. ."
     "No atendimento ao cliente você explica que a Dra Lorena faz atendimentos online todos os dias, para qualquer lugar do mundo. Ela também faz atendimentos presenciais na região de Paulínia. Se for homecare depende da distância (nesse caso informar o número de whatsapp para consultar +55(19)99875-0103)."
@@ -20,33 +22,27 @@ PROMPT_PERSONA = (
     "Atenção: Só cumprimente se houver um cumpromento (não cumprimente sem necessidade), caso o contrários apenas responda a pergunta, de maneira curta e clara. Use emojis sempre que possível para facilitar o entendimento. Fale de maneira técnica quando necessário"
 )
 
-# --- Função para Falar Texto (pyttsx3 no servidor - opcional para resposta web) ---
-def falar_texto_no_servidor(texto):
-    print(f"[PYTTSX3 NO SERVIDOR VAI FALAR]: {texto}") 
-    try:
-        engine = pyttsx3.init()
-        engine.say(texto)
-        engine.runAndWait()
-    except Exception as e:
-        print(f"Ocorreu um erro ao falar o texto com pyttsx3: {e}")
-
-# --- Função para Interagir com Gemini (Corrigida e Refatorada) ---
+# --- Função para Interagir com Gemini ---
 def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
     """
     Envia uma pergunta/comando para o modelo Gemini e retorna a resposta em texto.
     """
     try:
-        # ATENÇÃO: Sua API Key. Para produção, use variáveis de ambiente.
-        genai.configure(api_key="AIzaSyCAZ9rkZnmDO7KZRWss8_AWsQ9zdlTkUVY") # Substitua pela sua API Key
+        # ALTERAÇÃO DE SEGURANÇA: Lendo a API Key das variáveis de ambiente
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            print("Erro: A variável de ambiente GOOGLE_API_KEY não foi encontrada.")
+            return "Desculpe, o serviço de IA não está configurado corretamente."
+            
+        genai.configure(api_key=api_key)
 
-        # Concatena a persona com a pergunta atual do usuário
         prompt_completo = (
             f"{PROMPT_PERSONA}"
             f"O cliente '{nome_usuario}' disse/perguntou o seguinte: '{comando_do_usuario}'. "
             f"Responda apropriadamente ao que foi dito/perguntado. Se for uma saudação inicial como 'Olá', apresente-se brevemente, se não for uma saudação não cumprimente, vá direto ao ponto e responda."
         )
         
-        print(f"[PROMPT ENVIADO AO GEMINI]: {prompt_completo}")
+        print(f"[PROMPT ENVIADO AO GEMINI]: ...") # Omitido para não poluir o log
 
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt_completo)
@@ -59,8 +55,8 @@ def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
         print(f"Erro ao interagir com Gemini: {e}")
         return "Desculpe, ocorreu um problema com a IA ao tentar processar sua solicitação."
 
-# --- Endpoint Flask para Interação (Corrigido) ---
-@app.route('/interact', methods=['POST'])
+# --- Endpoint Flask para Interação ---
+@app.route('/interact', methods=['POST', 'OPTIONS'])
 def handle_interaction():
     try:
         data = request.get_json()
@@ -75,20 +71,19 @@ def handle_interaction():
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         print(f"[{timestamp}] Comando HTTP ('{command_from_web}') recebido de '{user_name_from_web}'")
-            
+        
         resposta_gemini = perguntaAoGemini(command_from_web, user_name_from_web) 
-            
+        
         return jsonify({"status": "success", "reply": resposta_gemini})
 
     except Exception as e:
         print(f"Erro crítico no endpoint /interact: {e}")
         return jsonify({"status": "error", "reply": "Ocorreu um erro interno no servidor ao lidar com a interação."}), 500
 
-# --- Bloco Principal para Execução do Servidor Flask ---
+# --- Bloco Principal para Execução ---
 if __name__ == '__main__':
+    # O comando gunicorn no Render vai ignorar esta seção, mas ela é útil para teste local
     print("===================================================")
     print(" Servidor Flask para Fidati Assistant IA Iniciado ")
     print("===================================================")
-    print("Escutando por requisições HTTP em: http://127.0.0.1:5000/interact")
-    print("Atenção: A saída de voz (TTS) agora é responsabilidade do cliente (navegador).")
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
