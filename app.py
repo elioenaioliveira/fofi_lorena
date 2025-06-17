@@ -1,6 +1,6 @@
 import os
 from flask import Flask, request, jsonify
-from flask_cors import CORS # A biblioteca que lida com o CORS
+from flask_cors import CORS 
 import datetime
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -9,14 +9,10 @@ load_dotenv()
 
 # --- Configuração do App Flask ---
 app = Flask(__name__)
+# Mantemos o CORS aqui como um fallback, mas o principal será o tratamento manual
+CORS(app) 
 
-# --- CORREÇÃO DE CORS APLICADA AQUI ---
-# Em vez de apenas CORS(app), vamos ser mais explícitos para garantir que funcione.
-# Isso diz ao servidor para aceitar requisições de qualquer origem para qualquer rota.
-# É perfeito e seguro para uma API pública como esta.
-CORS(app, resources={r"/*": {"origins": "*"}})
-
-# --- PERSONA DA IA ---
+# --- PERSONA DA IA (sem alterações) ---
 PROMPT_PERSONA = (
     "Você é uma vendedora IA chamada Fofi, a foca. Quem desenvolveu você foi Elioenai Programmer para a Fonoaudióloga Lorena Gomes, você é um robô inteligente que auxilia no atendimento e nos exercícios que a Fonoaudióloga passa para você. Você auxilia nos exercícios, ajudando a lembrar como faz os exercícios e informações importantes sobre o processo de fonoaudiologia. ."
     "No atendimento ao cliente você explica que a Dra Lorena faz atendimentos online todos os dias, para qualquer lugar do mundo. Ela também faz atendimentos presenciais na região de Paulínia. Se for homecare depende da distância (nesse caso informar o número de whatsapp para consultar +55(19)99875-0103)."
@@ -26,7 +22,7 @@ PROMPT_PERSONA = (
     "Atenção: Só cumprimente se houver um cumpromento (não cumprimente sem necessidade), caso o contrários apenas responda a pergunta, de maneira curta e clara. Use emojis sempre que possível para facilitar o entendimento. Fale de maneira técnica quando necessário"
 )
 
-# --- Função para Interagir com Gemini ---
+# --- Função para Interagir com Gemini (sem alterações) ---
 def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
     try:
         api_key = os.getenv("GOOGLE_API_KEY")
@@ -35,54 +31,49 @@ def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
             return "Desculpe, o serviço de IA não está configurado corretamente."
             
         genai.configure(api_key=api_key)
-
-        prompt_completo = (
-            f"{PROMPT_PERSONA}"
-            f"O cliente '{nome_usuario}' disse/perguntou o seguinte: '{comando_do_usuario}'. "
-            f"Responda apropriadamente ao que foi dito/perguntado. Se for uma saudação inicial como 'Olá', apresente-se brevemente, se não for uma saudação não cumprimente, vá direto ao ponto e responda."
-        )
+        prompt_completo = (f"{PROMPT_PERSONA}" f"O cliente '{nome_usuario}' disse/perguntou o seguinte: '{comando_do_usuario}'. " f"Responda apropriadamente ao que foi dito/perguntado. Se for uma saudação inicial como 'Olá', apresente-se brevemente, se não for uma saudação não cumprimente, vá direto ao ponto e responda.")
         
-        print(f"[PROMPT ENVIADO AO GEMINI]: ...")
-
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt_completo)
         
-        texto_resposta = response.text
-        print(f"[RESPOSTA GEMINI NO SERVIDOR]: {texto_resposta}")
-        
-        return texto_resposta
+        return response.text
     except Exception as e:
         print(f"Erro ao interagir com Gemini: {e}")
         return "Desculpe, ocorreu um problema com a IA ao tentar processar sua solicitação."
 
-# --- Endpoint Flask para Interação ---
+# --- Endpoint Flask para Interação (MODIFICADO) ---
 @app.route('/interact', methods=['POST', 'OPTIONS'])
 def handle_interaction():
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"status": "error", "reply": "Nenhum dado JSON recebido."}), 400
+    # --- NOVO BLOCO PARA LIDAR COM A REQUISIÇÃO PREFLIGHT (OPTIONS) ---
+    if request.method == 'OPTIONS':
+        # Esta é a resposta para a "pergunta de segurança" do navegador
+        headers = {
+            'Access-Control-Allow-Origin': '*', # Permite que qualquer site acesse
+            'Access-Control-Allow-Methods': 'POST, OPTIONS', # Permite os métodos que usaremos
+            'Access-Control-Allow-Headers': 'Content-Type', # Permite o cabeçalho 'Content-Type'
+            'Access-Control-Max-Age': '3600'
+        }
+        # Retorna uma resposta vazia com os cabeçalhos de permissão
+        return ('', 204, headers)
 
-        command_from_web = data.get('command')
-        user_name_from_web = data.get('user', 'Cliente')
+    # --- LÓGICA EXISTENTE PARA A REQUISIÇÃO POST ---
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data or 'command' not in data:
+                return jsonify({"status": "error", "reply": "Comando inválido."}), 400
 
-        if not command_from_web:
-            return jsonify({"status": "error", "reply": "Comando não pode ser vazio."}), 400
+            command_from_web = data.get('command')
+            user_name_from_web = data.get('user', 'Cliente')
 
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{timestamp}] Comando HTTP ('{command_from_web}') recebido de '{user_name_from_web}'")
-        
-        resposta_gemini = perguntaAoGemini(command_from_web, user_name_from_web) 
-        
-        return jsonify({"status": "success", "reply": resposta_gemini})
+            resposta_gemini = perguntaAoGemini(command_from_web, user_name_from_web) 
+            
+            return jsonify({"status": "success", "reply": resposta_gemini})
 
-    except Exception as e:
-        print(f"Erro crítico no endpoint /interact: {e}")
-        return jsonify({"status": "error", "reply": "Ocorreu um erro interno no servidor ao lidar com a interação."}), 500
+        except Exception as e:
+            print(f"Erro crítico no endpoint /interact: {e}")
+            return jsonify({"status": "error", "reply": "Ocorreu um erro interno no servidor."}), 500
 
-# --- Bloco Principal para Execução ---
+# --- Bloco Principal para Execução (sem alterações) ---
 if __name__ == '__main__':
-    print("===================================================")
-    print(" Servidor Flask para Fidati Assistant IA Iniciado ")
-    print("===================================================")
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
