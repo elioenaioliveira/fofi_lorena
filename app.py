@@ -1,6 +1,6 @@
 import os
 from flask import Flask, request, jsonify
-from flask_cors import CORS # Importamos a biblioteca
+from flask_cors import CORS
 import datetime
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -9,13 +9,7 @@ load_dotenv()
 
 # --- Configuração do App Flask ---
 app = Flask(__name__)
-
-# --- CORREÇÃO DE CORS DEFINITIVA ---
-# Configuração explícita que diz ao Flask para permitir requisições
-# da origem '*' (qualquer site), para a rota '/interact', usando os métodos
-# que precisamos e permitindo os cabeçalhos que o navegador envia.
-CORS(app, resources={r"/interact": {"origins": "*"}})
-
+CORS(app) # Voltando para a configuração mais simples por enquanto
 
 # --- PERSONA DA IA (sem alterações) ---
 PROMPT_PERSONA = (
@@ -32,39 +26,46 @@ def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
     try:
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            print("Erro: A variável de ambiente GOOGLE_API_KEY não foi encontrada.")
             return "Desculpe, o serviço de IA não está configurado corretamente."
-            
         genai.configure(api_key=api_key)
-        prompt_completo = (f"{PROMPT_PERSONA}" f"O cliente '{nome_usuario}' disse/perguntou o seguinte: '{comando_do_usuario}'. " f"Responda apropriadamente ao que foi dito/perguntado. Se for uma saudação inicial como 'Olá', apresente-se brevemente, se não for uma saudação não cumprimente, vá direto ao ponto e responda.")
-        
+        prompt_completo = (f"{PROMPT_PERSONA}" f"O cliente '{nome_usuario}' disse/perguntou o seguinte: '{comando_do_usuario}'. " f"Responda apropriadamente.")
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt_completo)
-        
         return response.text
     except Exception as e:
-        print(f"Erro ao interagir com Gemini: {e}")
         return "Desculpe, ocorreu um problema com a IA ao tentar processar sua solicitação."
 
-# --- Endpoint Flask para Interação ---
-# A biblioteca CORS agora cuidará da requisição OPTIONS automaticamente
-@app.route('/interact', methods=['POST'])
+# --- Endpoint Flask para Interação (MODIFICADO PARA TESTE) ---
+@app.route('/interact', methods=['GET', 'POST', 'OPTIONS'])
 def handle_interaction():
-    try:
-        data = request.get_json()
-        if not data or 'command' not in data:
-            return jsonify({"status": "error", "reply": "Comando inválido."}), 400
+    # --- BLOCO DE TESTE PARA REQUISIÇÃO GET ---
+    if request.method == 'GET':
+        print("Requisição GET recebida no endpoint /interact. Servidor está vivo!")
+        return jsonify({"status": "ok", "message": "O servidor da IA está no ar e este endpoint está acessível. Agora, ele espera requisições POST do seu chat."})
 
-        command_from_web = data.get('command')
-        user_name_from_web = data.get('user', 'Cliente')
+    # --- BLOCO PARA REQUISIÇÃO OPTIONS ---
+    if request.method == 'OPTIONS':
+        headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Max-Age': '3600'
+        }
+        return ('', 204, headers)
 
-        resposta_gemini = perguntaAoGemini(command_from_web, user_name_from_web) 
-        
-        return jsonify({"status": "success", "reply": resposta_gemini})
+    # --- BLOCO PARA REQUISIÇÃO POST ---
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data or 'command' not in data:
+                return jsonify({"status": "error", "reply": "Comando inválido."}), 400
 
-    except Exception as e:
-        print(f"Erro crítico no endpoint /interact: {e}")
-        return jsonify({"status": "error", "reply": "Ocorreu um erro interno no servidor."}), 500
+            command_from_web = data.get('command')
+            user_name_from_web = data.get('user', 'Cliente')
+            resposta_gemini = perguntaAoGemini(command_from_web, user_name_from_web) 
+            return jsonify({"status": "success", "reply": resposta_gemini})
+        except Exception as e:
+            return jsonify({"status": "error", "reply": "Ocorreu um erro interno no servidor."}), 500
 
 # --- Bloco Principal para Execução (sem alterações) ---
 if __name__ == '__main__':
