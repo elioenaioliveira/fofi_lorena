@@ -1,16 +1,20 @@
 import os
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS # A biblioteca que lida com o CORS
 import datetime
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente do arquivo .env (ótimo para teste local)
 load_dotenv()
 
 # --- Configuração do App Flask ---
 app = Flask(__name__)
-CORS(app) 
+
+# --- CORREÇÃO DE CORS APLICADA AQUI ---
+# Em vez de apenas CORS(app), vamos ser mais explícitos para garantir que funcione.
+# Isso diz ao servidor para aceitar requisições de qualquer origem para qualquer rota.
+# É perfeito e seguro para uma API pública como esta.
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --- PERSONA DA IA ---
 PROMPT_PERSONA = (
@@ -24,11 +28,7 @@ PROMPT_PERSONA = (
 
 # --- Função para Interagir com Gemini ---
 def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
-    """
-    Envia uma pergunta/comando para o modelo Gemini e retorna a resposta em texto.
-    """
     try:
-        # ALTERAÇÃO DE SEGURANÇA: Lendo a API Key das variáveis de ambiente
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             print("Erro: A variável de ambiente GOOGLE_API_KEY não foi encontrada.")
@@ -42,7 +42,7 @@ def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
             f"Responda apropriadamente ao que foi dito/perguntado. Se for uma saudação inicial como 'Olá', apresente-se brevemente, se não for uma saudação não cumprimente, vá direto ao ponto e responda."
         )
         
-        print(f"[PROMPT ENVIADO AO GEMINI]: ...") # Omitido para não poluir o log
+        print(f"[PROMPT ENVIADO AO GEMINI]: ...")
 
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt_completo)
@@ -82,7 +82,6 @@ def handle_interaction():
 
 # --- Bloco Principal para Execução ---
 if __name__ == '__main__':
-    # O comando gunicorn no Render vai ignorar esta seção, mas ela é útil para teste local
     print("===================================================")
     print(" Servidor Flask para Fidati Assistant IA Iniciado ")
     print("===================================================")
