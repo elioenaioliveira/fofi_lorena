@@ -1,6 +1,6 @@
 import os
 from flask import Flask, request, jsonify
-from flask_cors import CORS 
+from flask_cors import CORS # Importamos a biblioteca
 import datetime
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -9,8 +9,13 @@ load_dotenv()
 
 # --- Configuração do App Flask ---
 app = Flask(__name__)
-# Mantemos o CORS aqui como um fallback, mas o principal será o tratamento manual
-CORS(app) 
+
+# --- CORREÇÃO DE CORS DEFINITIVA ---
+# Configuração explícita que diz ao Flask para permitir requisições
+# da origem '*' (qualquer site), para a rota '/interact', usando os métodos
+# que precisamos e permitindo os cabeçalhos que o navegador envia.
+CORS(app, resources={r"/interact": {"origins": "*"}})
+
 
 # --- PERSONA DA IA (sem alterações) ---
 PROMPT_PERSONA = (
@@ -41,38 +46,25 @@ def perguntaAoGemini(comando_do_usuario, nome_usuario="Cliente"):
         print(f"Erro ao interagir com Gemini: {e}")
         return "Desculpe, ocorreu um problema com a IA ao tentar processar sua solicitação."
 
-# --- Endpoint Flask para Interação (MODIFICADO) ---
-@app.route('/interact', methods=['POST', 'OPTIONS'])
+# --- Endpoint Flask para Interação ---
+# A biblioteca CORS agora cuidará da requisição OPTIONS automaticamente
+@app.route('/interact', methods=['POST'])
 def handle_interaction():
-    # --- NOVO BLOCO PARA LIDAR COM A REQUISIÇÃO PREFLIGHT (OPTIONS) ---
-    if request.method == 'OPTIONS':
-        # Esta é a resposta para a "pergunta de segurança" do navegador
-        headers = {
-            'Access-Control-Allow-Origin': '*', # Permite que qualquer site acesse
-            'Access-Control-Allow-Methods': 'POST, OPTIONS', # Permite os métodos que usaremos
-            'Access-Control-Allow-Headers': 'Content-Type', # Permite o cabeçalho 'Content-Type'
-            'Access-Control-Max-Age': '3600'
-        }
-        # Retorna uma resposta vazia com os cabeçalhos de permissão
-        return ('', 204, headers)
+    try:
+        data = request.get_json()
+        if not data or 'command' not in data:
+            return jsonify({"status": "error", "reply": "Comando inválido."}), 400
 
-    # --- LÓGICA EXISTENTE PARA A REQUISIÇÃO POST ---
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            if not data or 'command' not in data:
-                return jsonify({"status": "error", "reply": "Comando inválido."}), 400
+        command_from_web = data.get('command')
+        user_name_from_web = data.get('user', 'Cliente')
 
-            command_from_web = data.get('command')
-            user_name_from_web = data.get('user', 'Cliente')
+        resposta_gemini = perguntaAoGemini(command_from_web, user_name_from_web) 
+        
+        return jsonify({"status": "success", "reply": resposta_gemini})
 
-            resposta_gemini = perguntaAoGemini(command_from_web, user_name_from_web) 
-            
-            return jsonify({"status": "success", "reply": resposta_gemini})
-
-        except Exception as e:
-            print(f"Erro crítico no endpoint /interact: {e}")
-            return jsonify({"status": "error", "reply": "Ocorreu um erro interno no servidor."}), 500
+    except Exception as e:
+        print(f"Erro crítico no endpoint /interact: {e}")
+        return jsonify({"status": "error", "reply": "Ocorreu um erro interno no servidor."}), 500
 
 # --- Bloco Principal para Execução (sem alterações) ---
 if __name__ == '__main__':
